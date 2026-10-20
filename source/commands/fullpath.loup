@@ -1,0 +1,63 @@
+@mode(host.dual)
+
+# Fully qualified paths, which replace prints in its messages (Windows
+# shows `C:\dir\a.txt`; here `\home\me\dir\a.txt` after display_path).
+# Loup 1.26.0 has no getcwd(), so the shell is asked once.
+
+# `a/./b/../c` → `a/c`; keeps a leading `/`; `..` above the root is dropped.
+pub func normalize_path(path: string): string {
+    let absolute = path.startsWith("/");
+    var parts: list[string] = [];
+    for (part in path.split("/")) {
+        if (part.len() == 0 or part == ".") {
+            continue;
+        }
+        if (part == "..") {
+            if (parts.len() > 0 and parts[parts.len() - 1] != "..") {
+                parts.pop();
+            } else if (!absolute) {
+                parts.push(part);
+            }
+            continue;
+        }
+        parts.push(part);
+    }
+    let joined = parts.join("/");
+    if (absolute) {
+        return "/" + joined;
+    }
+    if (joined.len() == 0) {
+        return ".";
+    }
+    return joined;
+}
+
+# `path` (fs form) made absolute against `cwd` and normalized.
+pub func full_path(path: string, cwd: string): string {
+    if (path.startsWith("/")) {
+        return normalize_path(path);
+    }
+    return normalize_path(cwd + "/" + path);
+}
+
+# The current directory, as the shell reports it. (The ProcResult is read
+# in the function that ran it, as native builds require.)
+pub func current_dir(): string {
+    let r = exec(["sh", "-c", "pwd"]);
+    let out = r.stdout.to_string();
+    if (r.exit_code != 0 or out.len() < 2) {
+        return "/";
+    }
+    return out.slice(0, out.len() - 1);
+}
+
+# The directory with every symlink resolved, to tell whether two paths are
+# the same directory; "" if it cannot be entered.
+pub func physical_dir(dir: string): string {
+    let r = exec(["sh", "-c", "cd -- \"$1\" && pwd -P", "sh", dir]);
+    let out = r.stdout.to_string();
+    if (r.exit_code != 0 or out.len() < 2) {
+        return "";
+    }
+    return out.slice(0, out.len() - 1);
+}

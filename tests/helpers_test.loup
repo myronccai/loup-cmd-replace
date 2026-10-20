@@ -1,0 +1,56 @@
+@mode(host.dual)
+
+# fullpath, console and fileops.
+
+from debug.assert import (expect, expectEq);
+from io.fs import (createDir, writeText, readText, removeDir, isDir);
+from commands.fullpath import (normalize_path, full_path, physical_dir);
+from commands.console import (answer_value, answer_echo);
+from commands.fileops import (is_writable, same_content, copy_over);
+
+func test_normalize_path(): void {
+    expectEq(normalize_path("/a/./b/../c/"), "/a/c", "absolute");
+    expectEq(normalize_path("a//b/.."), "a", "relative");
+    expectEq(normalize_path("../x"), "../x", "leading ..");
+    expectEq(normalize_path("/.."), "/", "above the root");
+    expectEq(normalize_path("./"), ".", "nothing left");
+}
+
+func test_full_path(): void {
+    expectEq(full_path("dst/a.txt", "/w"), "/w/dst/a.txt", "relative");
+    expectEq(full_path("./a.txt", "/w"), "/w/a.txt", "dot");
+    expectEq(full_path("../x", "/w/y"), "/w/x", "dot dot");
+    expectEq(full_path("/abs/b", "/w"), "/abs/b", "absolute");
+}
+
+func test_answers(): void {
+    expectEq(answer_value("y"), 1, "y");
+    expectEq(answer_value(" Yes "), 1, "Yes");
+    expectEq(answer_value("n"), 0, "n");
+    expectEq(answer_value("maybe"), -1, "other");
+    expectEq(answer_value(""), -1, "empty");
+    expectEq(answer_echo("yes"), "Y", "echo Y");
+    expectEq(answer_echo("No"), "N", "echo N");
+    expectEq(answer_echo(" x "), "x", "echo other");
+}
+
+func test_file_operations(): void {
+    let root = "build/tmp/helpers_test";
+    if (isDir(root)) {
+        removeDir(root);
+    }
+    createDir(root);
+    writeText(root + "/a", "one\n");
+    writeText(root + "/b", "one\n");
+    writeText(root + "/c", "two\n");
+    writeText(root + "/d", "one\nmore\n");
+    expect(same_content(root + "/a", root + "/b"), "same bytes");
+    expect(!same_content(root + "/a", root + "/c"), "different bytes");
+    expect(!same_content(root + "/a", root + "/d"), "different lengths");
+    expect(is_writable(root + "/a"), "writable");
+    expect(copy_over(root + "/c", root + "/a"), "copied");
+    expectEq(readText(root + "/a"), "two\n", "new contents");
+    expect(physical_dir(root).endsWith("/build/tmp/helpers_test"), "physical directory");
+    expectEq(physical_dir(root + "/missing"), "", "missing directory");
+    removeDir(root);
+}

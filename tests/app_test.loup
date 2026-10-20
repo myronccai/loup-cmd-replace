@@ -1,25 +1,40 @@
 @mode(host.dual)
 
 # Exit statuses of the whole command line. These tests print the program's
-# normal output and error messages.
+# normal output.
 
 from debug.assert import (expectEq);
-from appinfo import (EXIT_OK, EXIT_USAGE);
+from io.fs import (createDir, writeText, readText, removeDir, isDir);
+from appinfo import (EXIT_OK, EXIT_NO_FILES, EXIT_PATH_NOT_FOUND, EXIT_USAGE);
 from cli.app import (run);
 
-func test_version_succeeds(): void {
+func test_version_and_help(): void {
     expectEq(run(["--version"]), EXIT_OK, "--version");
+    expectEq(run(["/?"]), EXIT_OK, "/?");
 }
 
-func test_hello_succeeds(): void {
-    expectEq(run(["hello", "tests"]), EXIT_OK, "hello NAME");
-}
-
-func test_unknown_command_is_usage_error(): void {
-    expectEq(run(["bogus"]), EXIT_USAGE, "unknown command");
-}
-
-func test_missing_command_is_usage_error(): void {
+func test_usage_errors(): void {
     let none: list[string] = [];
-    expectEq(run(none), EXIT_USAGE, "no command");
+    expectEq(run(none), EXIT_USAGE, "no source");
+    expectEq(run(["a", "/x"]), EXIT_USAGE, "invalid switch");
+}
+
+func test_replace_and_add(): void {
+    let root = "build/tmp/app_replace";
+    if (isDir(root)) {
+        removeDir(root);
+    }
+    createDir(root);
+    createDir(root + "/src");
+    createDir(root + "/dst");
+    writeText(root + "/src/a.txt", "new\n");
+    writeText(root + "/src/b.txt", "added\n");
+    writeText(root + "/dst/a.txt", "old\n");
+    expectEq(run([root + "\\src\\*.txt", root + "/dst"]), EXIT_OK, "replace");
+    expectEq(readText(root + "/dst/a.txt"), "new\n", "replaced");
+    expectEq(run([root + "/src/*.txt", root + "/dst", "/a"]), EXIT_OK, "add");
+    expectEq(readText(root + "/dst/b.txt"), "added\n", "added");
+    expectEq(run([root + "/src/*.none", root + "/dst"]), EXIT_NO_FILES, "no source match");
+    expectEq(run([root + "/src/a.txt", root + "/nodir"]), EXIT_PATH_NOT_FOUND, "no destination");
+    removeDir(root);
 }

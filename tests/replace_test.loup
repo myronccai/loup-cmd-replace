@@ -1,0 +1,74 @@
+@mode(host.dual)
+
+# Selection and messages of commands/replace.loup, on a tree under build/tmp.
+
+from debug.assert import (expect, expectEq);
+from io.fs import (createDir, writeText, removeDir, isDir);
+from commands.replace import (summary, msg_no_files, msg_path_not_found, msg_access_denied,
+    MSG_SAME_FILE, source_dir, dest_dir, source_names, replace_targets, add_targets);
+
+const ROOT: string = "build/tmp/replace_test";
+
+func make_tree(): void {
+    if (isDir(ROOT)) {
+        removeDir(ROOT);
+    }
+    createDir(ROOT);
+    for (d in ["src", "src/inner", "dst", "dst/b.txt.d", "dst/sub", "dst/sub/deep", "dst/Zed"]) {
+        createDir(ROOT + "/" + d);
+    }
+    for (f in ["src/a.txt", "src/B.TXT", "src/c.log", "dst/a.txt", "dst/z.txt", "dst/sub/a.txt",
+        "dst/sub/B.TXT", "dst/sub/deep/a.txt", "dst/Zed/a.txt"]) {
+        writeText(ROOT + "/" + f, f + "\n");
+    }
+    createDir(ROOT + "/dst/sub/c.log");
+}
+
+func test_messages(): void {
+    expectEq(summary(0, false), "\nNo files replaced", "none replaced");
+    expectEq(summary(0, true), "\nNo files added", "none added");
+    expectEq(summary(3, false), "\n3 file(s) replaced", "replaced");
+    expectEq(summary(1, true), "\n1 file(s) added", "added");
+    expectEq(msg_no_files("\\w\\*.x"), "\nNo files found - \\w\\*.x", "no files");
+    expectEq(msg_path_not_found("\\w\\d"), "Path not found - \\w\\d", "path");
+    expectEq(msg_access_denied("\\w\\a"), "Access denied - \\w\\a", "access");
+    expectEq(MSG_SAME_FILE, "File cannot be copied onto itself", "same file");
+}
+
+func test_dirs(): void {
+    expectEq(source_dir("*.txt"), ".", "no directory");
+    expectEq(source_dir("src\\*.txt"), "src", "backslash");
+    expectEq(source_dir("/a.txt"), "/", "root");
+    expectEq(dest_dir(""), ".", "default destination");
+    expectEq(dest_dir("dst\\sub\\"), "dst/sub", "separators");
+}
+
+func test_source_names(): void {
+    make_tree();
+    expectEq(source_names(ROOT + "/src/*.txt").join(" "), "a.txt B.TXT", "wildcard, files only");
+    expectEq(source_names(ROOT + "\\src\\*").join(" "), "a.txt B.TXT c.log", "every file");
+    expectEq(source_names(ROOT + "/src/a.txt").join(" "), "a.txt", "one file");
+    expectEq(source_names(ROOT + "/src/inner").len(), 0, "a directory is not a file");
+    expectEq(source_names(ROOT + "/src/none.txt").len(), 0, "missing");
+    removeDir(ROOT);
+}
+
+func test_replace_targets(): void {
+    make_tree();
+    let d = ROOT + "/dst";
+    let names = ["a.txt", "B.TXT", "c.log"];
+    expectEq(replace_targets(d, names, false).join(" "), d + "/a.txt", "top level only");
+    expectEq(replace_targets(d, names, true).join(" "),
+        d + "/a.txt " + d + "/sub/a.txt " + d + "/sub/B.TXT " + d + "/sub/deep/a.txt " + d + "/Zed/a.txt",
+        "/S: name order, subdirectories where they appear, directories never targets");
+    expectEq(replace_targets(d, ["A.TXT"], true).len(), 0, "names are case-sensitive");
+    removeDir(ROOT);
+}
+
+func test_add_targets(): void {
+    make_tree();
+    let d = ROOT + "/dst";
+    expectEq(add_targets(d, ["a.txt", "B.TXT", "c.log", "b.txt.d"]).join(" "),
+        d + "/B.TXT " + d + "/c.log", "only the missing names");
+    removeDir(ROOT);
+}

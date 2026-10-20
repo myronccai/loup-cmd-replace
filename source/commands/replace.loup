@@ -1,0 +1,199 @@
+@mode(host.dual)
+
+# replace: copies source files over the same-named files of a destination
+# directory (with /S, of its whole tree), or with /A adds the source files
+# the destination lacks. Messages and order follow REPLACE: each progress
+# message is preceded by an empty line, and a summary always ends the run.
+
+from appinfo import (EXIT_OK, EXIT_NO_FILES, EXIT_PATH_NOT_FOUND, EXIT_ACCESS_DENIED);
+from cli.args import (Options);
+from io.fs import (exists, isDir, isFile, listDir);
+from win.paths import (fs_path, display_path, split_path, join_path, base_name, parent_dir,
+    strip_trailing_separators);
+from win.wildcard import (MATCH_FILES, MAX_DEPTH, has_wildcards, list_matches, sort_names,
+    wildcard_in_directory);
+from commands.fullpath import (full_path, current_dir, physical_dir);
+from commands.fileops import (is_writable, same_content, copy_over);
+from commands.console import (wait_for_key, ask_yes_no);
+
+pub const MSG_SAME_FILE: string = "File cannot be copied onto itself";
+
+pub func msg_no_files(path: string): string {
+    return "\nNo files found - " + path;
+}
+
+pub func msg_path_not_found(path: string): string {
+    return "Path not found - " + path;
+}
+
+pub func msg_access_denied(path: string): string {
+    return "Access denied - " + path;
+}
+
+# The last line of a run: `No files replaced`, `3 file(s) added`, ...
+pub func summary(count: int, adding: bool): string {
+    let verb = if (adding) { "added" } else { "replaced" };
+    if (count == 0) {
+        return "\nNo files " + verb;
+    }
+    return "\n" + str(count) + " file(s) " + verb;
+}
+
+# The directory part of the source operand in fs form (`.` for none).
+pub func source_dir(source: string): string {
+    let dir = split_path(fs_path(source)).dir;
+    if (dir.len() == 0) {
+        return ".";
+    }
+    return dir;
+}
+
+# The destination directory in fs form (`.` when none is given).
+pub func dest_dir(dest: string): string {
+    if (dest.len() == 0) {
+        return ".";
+    }
+    return strip_trailing_separators(fs_path(dest));
+}
+
+# The names of the source files: the files matching a wildcard, sorted, or
+# the one file named; directories never count.
+pub func source_names(source: string): list[string] {
+    let parts = split_path(fs_path(source));
+    let dir = source_dir(source);
+    if (has_wildcards(parts.name)) {
+        return list_matches(dir, parts.name, MATCH_FILES);
+    }
+    var out: list[string] = [];
+    if (parts.name.len() > 0 and isFile(join_path(dir, parts.name))) {
+        out.push(parts.name);
+    }
+    return out;
+}
+
+# The files to replace, in REPLACE's order: the destination's entries in
+# name order; a file whose name is a source name is a target; with
+# `subdirs`, a directory is searched where it appears, depth first.
+pub func replace_targets(dir: string, names: list[string], subdirs: bool): list[string] {
+    return targets_below(dir, names, subdirs, 0);
+}
+
+func targets_below(dir: string, names: list[string], subdirs: bool, depth: int): list[string] {
+    var out: list[string] = [];
+    if (!isDir(dir)) {
+        return out;
+    }
+    for (name in sort_names(listDir(dir))) {
+        if (name == "." or name == "..") {
+            continue;
+        }
+        let path = join_path(dir, name);
+        if (isFile(path)) {
+            if (names.contains(name)) {
+                out.push(path);
+            }
+        } else if (subdirs and isDir(path) and depth < MAX_DEPTH) {
+            for (sub in targets_below(path, names, subdirs, depth + 1)) {
+                out.push(sub);
+            }
+        }
+    }
+    return out;
+}
+
+# The source files /A adds: those with no entry of the same name in the
+# destination, as destination paths.
+pub func add_targets(dir: string, names: list[string]): list[string] {
+    var out: list[string] = [];
+    for (name in names) {
+        let path = join_path(dir, name);
+        if (!exists(path)) {
+            out.push(path);
+        }
+    }
+    return out;
+}
+
+# Runs replace; returns the ERRORLEVEL.
+pub func run_replace(opts: Options): int {
+    let cwd = current_dir();
+    let shown_source = display_path(full_path(fs_path(opts.source), cwd));
+    let src_dir = source_dir(opts.source);
+    let dest = dest_dir(opts.dest);
+    if (opts.wait) {
+        wait_for_key();
+    }
+    if (wildcard_in_directory(opts.source) or !isDir(src_dir)) {
+        printErr(msg_path_not_found(shown_source));
+        return EXIT_PATH_NOT_FOUND;
+    }
+    let names = source_names(opts.source);
+    if (names.len() == 0) {
+        printErr(msg_no_files(shown_source));
+        return EXIT_NO_FILES;
+    }
+    if (!isDir(dest)) {
+        printErr(msg_path_not_found(display_path(full_path(dest, cwd))));
+        return EXIT_PATH_NOT_FOUND;
+    }
+    if (opts.add) {
+        return add_files(opts, cwd, src_dir, dest, names);
+    }
+    return replace_files(opts, cwd, src_dir, dest, names);
+}
+
+func add_files(opts: Options, cwd: string, src_dir: string, dest: string, names: list[string]): int {
+    var count = 0;
+    for (target in add_targets(dest, names)) {
+        let shown = display_path(full_path(target, cwd));
+        if (opts.prompt and !ask_yes_no("\nAdd " + shown + "? (Y/N)")) {
+            continue;
+        }
+        println("\nAdding " + shown);
+        if (!copy_over(join_path(src_dir, base_name(target)), target)) {
+            printErr(msg_access_denied(shown));
+            return EXIT_ACCESS_DENIED;
+        }
+        count += 1;
+    }
+    println(summary(count, true));
+    return EXIT_OK;
+}
+
+func replace_files(opts: Options, cwd: string, src_dir: string, dest: string, names: list[string]): int {
+    let src_physical = physical_dir(src_dir);
+    var count = 0;
+    var last_dir = "";
+    var last_physical = "";
+    for (target in replace_targets(dest, names, opts.subdirs)) {
+        let source_file = join_path(src_dir, base_name(target));
+        let dir = parent_dir(target);
+        if (dir != last_dir or last_physical.len() == 0) {
+            last_dir = dir;
+            last_physical = physical_dir(if (dir.len() == 0) { "." } else { dir });
+        }
+        if (last_physical == src_physical) {
+            printErr(MSG_SAME_FILE);
+            continue;
+        }
+        if (opts.update and same_content(source_file, target)) {
+            continue;
+        }
+        let shown = display_path(full_path(target, cwd));
+        if (opts.prompt and !ask_yes_no("\nReplace " + shown + "? (Y/N)")) {
+            continue;
+        }
+        println("\nReplacing " + shown);
+        if (!opts.readonly and !is_writable(target)) {
+            printErr(msg_access_denied(shown));
+            return EXIT_ACCESS_DENIED;
+        }
+        if (!copy_over(source_file, target)) {
+            printErr(msg_access_denied(shown));
+            return EXIT_ACCESS_DENIED;
+        }
+        count += 1;
+    }
+    println(summary(count, false));
+    return EXIT_OK;
+}

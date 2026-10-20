@@ -1,0 +1,40 @@
+@mode(host.dual)
+
+# File operations with the checks that native io.fs leaves out: it fails
+# silently (copy onto a read-only file, remove in a read-only directory),
+# so every copy is verified afterwards.
+
+from io.fs import (copy, remove, exists, isFile);
+
+# Whether the current user may write the file (`test -w`; Loup 1.26.0 has
+# no stat()).
+pub func is_writable(path: string): bool {
+    let r = exec(["test", "-w", path]);
+    return r.exit_code == 0;
+}
+
+# Whether two files hold the same bytes.
+pub func same_content(a: string, b: string): bool {
+    let x = readBytes(a);
+    let y = readBytes(b);
+    if (x.len() != y.len()) {
+        return false;
+    }
+    for (k in 0..x.len()) {
+        if (x[k] != y[k]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+# Copies `src` over `dst`. A read-only `dst` is removed first (replace
+# reaches this for one only with /R). Returns whether `dst` now holds the
+# source's bytes.
+pub func copy_over(src: string, dst: string): bool {
+    if (exists(dst) and !is_writable(dst)) {
+        remove(dst);
+    }
+    copy(src, dst);
+    return isFile(dst) and same_content(src, dst);
+}

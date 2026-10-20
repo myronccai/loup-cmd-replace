@@ -1,0 +1,16 @@
+Copies source files over same-named files in a folder, or adds the
+ones the folder does not have yet.
+
+REPLACE source [destination] [/A] [/P] [/R] [/W]
+REPLACE source [destination] [/P] [/R] [/S] [/W] [/U]
+
+  source       File or wildcard to copy from.
+  destination  Folder to update (default: the current folder).
+  /A           Add only the files missing from the destination.
+  /P           Ask before each file.
+  /R           Also overwrite read-only files.
+  /S           Look for the files in every subfolder of the destination.
+  /W           Wait for a key before starting.
+  /U           Replace only files whose contents differ from the source.
+
+/A cannot be combined with /S or /U.

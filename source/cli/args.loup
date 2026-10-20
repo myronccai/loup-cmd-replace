@@ -1,98 +1,135 @@
 @mode(host.dual)
 
-# Command-line parsing. Loup 1.26 has no CLI library, so arguments are
-# parsed by hand into an Options value.
+# Command-line parsing for replace:
 #
-# Grammar: [OPTIONS] COMMAND [OPERANDS...]
-#   Options may appear anywhere before `--`; everything after `--` is an
-#   operand. Value options accept `--name VALUE` and `--name=VALUE`.
+#   REPLACE source [destination] [/A] [/P] [/R] [/W]
+#   REPLACE source [destination] [/P] [/R] [/S] [/W] [/U]
+#
+# through the shared Windows switch parser (win/switches.loup). The usage
+# errors are replace's own (all ERRORLEVEL 11): `Invalid switch - /X`,
+# `Too many parameters - X`, `Source path required`, `Invalid parameter
+# combination`.
 
-pub const DEFAULT_GREETING: string = "Hello";
+from io.fs import (exists);
+from win.switches import (SwitchSpec, SwitchArgs, flag, parse_switches, has_switch);
+from win.paths import (fs_path);
+from win.wildcard import (has_wildcards);
 
 pub struct Options {
-    pub command: string;
-    pub operands: list[string];
     pub help: bool;
     pub version: bool;
-    pub verbose: bool;
-    pub shout: bool;
-    pub greeting: string;
+    pub source: string;     # as typed
+    pub dest: string;       # as typed; "" for the current directory
+    pub add: bool;          # /A
+    pub prompt: bool;       # /P
+    pub readonly: bool;     # /R
+    pub subdirs: bool;      # /S
+    pub wait: bool;         # /W
+    pub update: bool;       # /U
 }
 
-pub func parse_args(argv: list[string]): Result[Options, string] {
-    var command = "";
-    var operands: list[string] = [];
-    var help = false;
-    var version = false;
-    var verbose = false;
-    var shout = false;
-    var greeting = DEFAULT_GREETING;
-    var only_operands = false;
+pub func replace_switches(): list[SwitchSpec] {
+    return [flag("A"), flag("P"), flag("R"), flag("S"), flag("W"), flag("U")];
+}
 
-    var i = 0;
-    while (i < argv.len()) {
-        let arg = argv[i];
-        i += 1;
+# Whether an operand is really a mistyped switch (`/x`, `-q`): it starts
+# with `/` or `-`, has no other separator or wildcard, and names nothing
+# that exists. `/etc` or `/tmp/a.txt` stay paths.
+pub func looks_like_switch(arg: string): bool {
+    if (arg.len() < 2 or !(arg.startsWith("/") or arg.startsWith("-"))) {
+        return false;
+    }
+    let rest = arg.slice(1);
+    if (rest.index_of("/") >= 0 or rest.index_of("\\") >= 0 or has_wildcards(rest)) {
+        return false;
+    }
+    return !exists(fs_path(arg));
+}
 
-        if (only_operands or arg == "-" or !arg.startsWith("-")) {
-            if (command.is_empty()) {
-                command = arg;
-            } else {
-                operands.push(arg);
+# The first switch given more than once, as typed, or "".
+func repeated_switch(parsed: SwitchArgs): string {
+    for (i in 0..parsed.switches.len()) {
+        for (j in 0..i) {
+            if (parsed.switches[j].name == parsed.switches[i].name) {
+                return parsed.switches[i].text;
             }
-            continue;
-        }
-        if (arg == "--") {
-            only_operands = true;
-            continue;
-        }
-
-        # Split `--name=value` into its name and inline value.
-        var name = arg;
-        var inline_value: Option[string] = None;
-        if (arg.startsWith("--") and arg.contains("=")) {
-            let parts = arg.split("=");
-            name = parts[0];
-            inline_value = Some(parts.slice(1).join("="));
-        }
-
-        if (name == "-g" or name == "--greeting") {
-            match inline_value {
-                Some(v) => { greeting = v; },
-                None => {
-                    if (i >= argv.len()) {
-                        return Err(i"option '{$ name $}' requires a value");
-                    }
-                    greeting = argv[i];
-                    i += 1;
-                },
-            }
-            continue;
-        }
-
-        if (inline_value.is_some()) {
-            return Err(i"option '{$ name $}' does not take a value");
-        }
-        if (name == "-h" or name == "--help") {
-            help = true;
-        } else if (name == "-V" or name == "--version") {
-            version = true;
-        } else if (name == "-v" or name == "--verbose") {
-            verbose = true;
-        } else if (name == "--shout") {
-            shout = true;
-        } else {
-            return Err(i"unknown option '{$ name $}'");
         }
     }
+    return "";
+}
 
+# Parses argv. An Err holds the message for standard error (status 11).
+# (Statement-form `match`: a match expression whose arms build new values
+# returns freed memory in native builds.)
+pub func parse_args(argv: list[string]): Result[Options, string] {
+    match parse_switches(argv, replace_switches()) {
+        Ok(parsed) => {
+            return options_from(parsed, operands_before_dashes(argv));
+        },
+        Err(e) => {
+            return Err("Invalid switch - " + e.text);
+        },
+    }
+}
+
+# How many operands come before a `--` (all of them when there is none):
+# only those can be mistyped switches.
+func operands_before_dashes(argv: list[string]): int {
+    var before: list[string] = [];
+    for (arg in argv) {
+        if (arg == "--") {
+            break;
+        }
+        before.push(arg);
+    }
+    match parse_switches(before, replace_switches()) {
+        Ok(p) => {
+            return p.operands.len();
+        },
+        Err(e) => {
+            return 0;
+        },
+    }
+}
+
+func options_from(parsed: SwitchArgs, checked: int): Result[Options, string] {
+    if (parsed.help or parsed.version) {
+        return Ok(Options(help = parsed.help, version = parsed.version, source = "", dest = "",
+            add = false, prompt = false, readonly = false, subdirs = false, wait = false,
+            update = false));
+    }
+    let twice = repeated_switch(parsed);
+    if (twice.len() > 0) {
+        return Err("Invalid switch - " + twice);
+    }
+    for (k in 0..parsed.operands.len()) {
+        if (k < checked and looks_like_switch(parsed.operands[k])) {
+            return Err("Invalid switch - " + parsed.operands[k]);
+        }
+    }
+    if (parsed.operands.len() > 2) {
+        return Err("Too many parameters - " + parsed.operands[2]);
+    }
+    if (parsed.operands.len() == 0) {
+        return Err("Source path required");
+    }
+    let add = has_switch(parsed, "A");
+    let subdirs = has_switch(parsed, "S");
+    let update = has_switch(parsed, "U");
+    if (add and (subdirs or update)) {
+        return Err("Invalid parameter combination");
+    }
+    let dest = if (parsed.operands.len() > 1) { parsed.operands[1] } else { "" };
     return Ok(Options(
-        command = command,
-        operands = operands,
-        help = help,
-        version = version,
-        verbose = verbose,
-        shout = shout,
-        greeting = greeting,
+        help = false,
+        version = false,
+        source = parsed.operands[0],
+        dest = dest,
+        add = add,
+        prompt = has_switch(parsed, "P"),
+        readonly = has_switch(parsed, "R"),
+        subdirs = subdirs,
+        wait = has_switch(parsed, "W"),
+        update = update,
     ));
 }
