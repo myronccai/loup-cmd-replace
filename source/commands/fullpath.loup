@@ -3,6 +3,12 @@
 # Fully qualified paths, which replace prints in its messages (Windows
 # shows `C:\dir\a.txt`; here `\home\me\dir\a.txt` after display_path).
 # Loup 1.26.0 has no getcwd(), so the shell is asked once.
+#
+# Runtime: host.dual. Compiled into the native binary build/replace by `make
+# build`; `make run` interprets the same code with Stage0 (`loup-bootstrap run
+# source/main.loup`). It calls exec(); the self-hosted `loup run` of Loup
+# 1.26.0 joins exec() arguments into one shell line without quoting, which
+# breaks these calls, so `make run` uses Stage0.
 
 # `a/./b/../c` → `a/c`; keeps a leading `/`; `..` above the root is dropped.
 pub func normalize_path(path: string): string {

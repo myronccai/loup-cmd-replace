@@ -1,6 +1,11 @@
 @mode(host.dual)
 
-# Selection and messages of commands/replace.loup, on a tree under build/tmp.
+# Unit tests for the selection and messages of commands/replace.loup, on a
+# tree under build/tmp/ (removed by `make clean`).
+#
+# Runtime: host.dual, run by the test runner: `make test` interprets this file
+# with Stage0 (`loup-bootstrap test --no-parallel`, source/ on LOUPPATH), one
+# test per `func test_*()`. It is not part of the binary.
 
 from debug.assert import (expect, expectEq);
 from io.fs import (createDir, writeText, removeDir, isDir);

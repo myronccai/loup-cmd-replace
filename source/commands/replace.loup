@@ -4,6 +4,15 @@
 # directory (with /S, of its whole tree), or with /A adds the source files
 # the destination lacks. Messages and order follow REPLACE: each progress
 # message is preceded by an empty line, and a summary always ends the run.
+#
+# Runtime: host.dual. Compiled into the native binary build/replace by `make
+# build`; `make run` interprets the same code with Stage0 (`loup-bootstrap run
+# source/main.loup`).
+#
+# Structure: messages; the source and destination directories; selecting the
+# source names and the targets (replace_targets for replacing, add_targets for
+# /A); run_replace, which makes the checks that end the run early; and the two
+# copy loops, add_files and replace_files.
 
 from appinfo import (EXIT_OK, EXIT_NO_FILES, EXIT_PATH_NOT_FOUND, EXIT_ACCESS_DENIED);
 from cli.args import (Options);
@@ -160,6 +169,10 @@ func add_files(opts: Options, cwd: string, src_dir: string, dest: string, names:
     return EXIT_OK;
 }
 
+# Copying a file onto itself would empty it, so each target's directory is
+# compared with the source directory after resolving symbolic links
+# (physical_dir). Targets come grouped by directory, so the answer for the
+# last directory is kept.
 func replace_files(opts: Options, cwd: string, src_dir: string, dest: string, names: list[string]): int {
     let src_physical = physical_dir(src_dir);
     var count = 0;

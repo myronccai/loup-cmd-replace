@@ -3,6 +3,12 @@
 # File operations with the checks that native io.fs leaves out: it fails
 # silently (copy onto a read-only file, remove in a read-only directory),
 # so every copy is verified afterwards.
+#
+# Runtime: host.dual. Compiled into the native binary build/replace by `make
+# build`; `make run` interprets the same code with Stage0 (`loup-bootstrap run
+# source/main.loup`). It calls exec(); the self-hosted `loup run` of Loup
+# 1.26.0 joins exec() arguments into one shell line without quoting, which
+# breaks these calls, so `make run` uses Stage0.
 
 from io.fs import (copy, remove, exists, isFile);
 

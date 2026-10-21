@@ -1,7 +1,15 @@
 @mode(host.dual)
 
-# Entry point. Keep this file thin: all behaviour lives in cli.app.run so
-# that tests can call it with an argument list.
+# replace: entry point. Keep this file thin: all behaviour lives in
+# cli.app.run so that tests can call it with an argument list.
+#
+# Runtime: host.dual. main() gets the command line from runtime.args(). `make
+# build` compiles it with the rest of source/ into the native binary
+# build/replace, which `make e2e` and CI then exercise. `make run` interprets
+# the same source with Stage0 (`loup-bootstrap run source/main.loup`), because
+# the self-hosted `loup run` of Loup 1.26.0 joins exec() arguments into one
+# shell line without quoting, which breaks the helpers replace runs through
+# sh.
 
 from cli.app import (run);
 

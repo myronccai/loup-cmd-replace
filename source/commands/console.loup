@@ -4,6 +4,12 @@
 # Loup 1.26.0 reads standard input only as a whole, so a child `sh` reads
 # what is needed and no more: one key (raw mode on a terminal, one byte
 # otherwise) or one line.
+#
+# Runtime: host.dual. Compiled into the native binary build/replace by `make
+# build`; `make run` interprets the same code with Stage0 (`loup-bootstrap run
+# source/main.loup`). It calls exec(); the self-hosted `loup run` of Loup
+# 1.26.0 joins exec() arguments into one shell line without quoting, which
+# breaks these calls, so `make run` uses Stage0.
 
 const READ_KEY: string = "if [ -t 0 ]; then s=$(stty -g); stty -icanon -echo min 1; dd bs=1 count=1 >/dev/null 2>&1; stty \"$s\"; else dd bs=1 count=1 >/dev/null 2>&1; fi";
 

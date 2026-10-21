@@ -1,5 +1,12 @@
 @mode(host.dual)
 
+# Top level of replace: parse the arguments, handle /? and --version, run
+# the command and turn the outcome into replace's ERRORLEVEL.
+#
+# Runtime: host.dual. Compiled into the native binary build/replace by `make
+# build`; `make run` interprets the same code with Stage0 (`loup-bootstrap run
+# source/main.loup`). The unit tests call run() directly.
+
 from appinfo import (EXIT_OK, EXIT_USAGE, EXIT_ACCESS_DENIED);
 from cli.args import (parse_args);
 from cli.usage import (usage, version_line);

@@ -9,6 +9,15 @@
 # errors are replace's own (all ERRORLEVEL 11): `Invalid switch - /X`,
 # `Too many parameters - X`, `Source path required`, `Invalid parameter
 # combination`.
+#
+# Runtime: host.dual. Compiled into the native binary build/replace by `make
+# build`; `make run` interprets the same code with Stage0 (`loup-bootstrap run
+# source/main.loup`).
+#
+# Structure: parse_args parses the whole command line, and counts the operands
+# before any `--` with a second parse: only those may be mistyped switches.
+# options_from then checks, in turn: repeated switches, mistyped switches, too
+# many operands, no source, /A with /S or /U.
 
 from io.fs import (exists);
 from win.switches import (SwitchSpec, SwitchArgs, flag, parse_switches, has_switch);

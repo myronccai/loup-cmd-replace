@@ -1,5 +1,12 @@
 @mode(host.dual)
 
+# Unit tests for replace's argument parsing (cli.args): switches in any
+# case and place, Linux paths as operands, the usage errors and `--`.
+#
+# Runtime: host.dual, run by the test runner: `make test` interprets this file
+# with Stage0 (`loup-bootstrap test --no-parallel`, source/ on LOUPPATH), one
+# test per `func test_*()`. It is not part of the binary.
+
 from debug.assert import (expect, expectEq);
 from cli.args import (parse_args, replace_switches, looks_like_switch);
 
