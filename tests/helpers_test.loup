@@ -13,6 +13,7 @@ from io.fs import (createDir, writeText, readText, removeDir, isDir);
 from commands.fullpath import (normalize_path, full_path, physical_dir);
 from commands.console import (answer_value, answer_echo);
 from commands.fileops import (is_writable, same_content, copy_over);
+from testing import (skipTest);
 
 func test_normalize_path(): void {
     expectEq(normalize_path("/a/./b/../c/"), "/a/c", "absolute");
@@ -58,5 +59,26 @@ func test_file_operations(): void {
     expectEq(readText(root + "/a"), "two\n", "new contents");
     expect(physical_dir(root).endsWith("/build/tmp/helpers_test"), "physical directory");
     expectEq(physical_dir(root + "/missing"), "", "missing directory");
+    removeDir(root);
+}
+
+func test_read_only_file(): void {
+    # root may write to any file, so no file is read-only for it: there is
+    # nothing to test then.
+    if (exec(["id", "-u"]).stdout.to_string().trim() == "0") {
+        skipTest("running as root: no file is read-only");
+        return;
+    }
+    let root = "build/tmp/helpers_read_only";
+    if (isDir(root)) {
+        removeDir(root);
+    }
+    createDir(root);
+    writeText(root + "/old", "old\n");
+    writeText(root + "/new", "new\n");
+    expectEq(exec(["chmod", "a-w", root + "/old"]).exit_code, 0, "chmod");
+    expect(!is_writable(root + "/old"), "read-only");
+    expect(copy_over(root + "/new", root + "/old"), "replaced anyway (/R)");
+    expectEq(readText(root + "/old"), "new\n", "new contents");
     removeDir(root);
 }

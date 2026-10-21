@@ -51,10 +51,12 @@ pub func answer_echo(line: string): string {
     return line.trim();
 }
 
-# /P: prints the question and reads answers until one starts with Y or N.
-# The end of the input counts as No.
+# /P: prints the question and reads answers until one starts with Y or N
+# (the question is always asked once, hence do/while). The end of the input
+# counts as No.
 pub func ask_yes_no(question: string): bool {
-    while (true) {
+    var value = -1;
+    do {
         print(question);
         let r = exec(["sh", "-c", READ_LINE]);
         let out = r.stdout.to_string();
@@ -66,10 +68,7 @@ pub func ask_yes_no(question: string): bool {
         if (!out.startsWith("1")) {
             println(answer_echo(line));
         }
-        let value = answer_value(line);
-        if (value >= 0) {
-            return value == 1;
-        }
-    }
-    return false;
+        value = answer_value(line);
+    } while (value < 0);
+    return value == 1;
 }
